@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  AlwaysNotify:
+    Type: String
+    Default: ""
+  LoginEmail:
+    Type: String
+  LoginPassword:
+    Type: String
+  NotificationPhoneNumber:
+    Type: String
+
+Resources:
+  FnRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+
+      Policies:
+        - PolicyName: HandlerExecutionRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sns:Publish
+                NotResource: "arn:aws:sns:*"
+
+  HandlerFn:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Code: "dist/bundle.js"
+      Handler: bundle.handler
+      Role: !GetAtt FnRole.Arn
+      Runtime: nodejs14.x
+      Timeout: 60
+      Environment:
+        Variables:
+          TLS_ALWAYS_NOTIFY: !Ref AlwaysNotify
+          TLS_PASS: !Ref LoginPassword
+          TLS_PHONE_NUMBER: !Ref NotificationPhoneNumber
+          TLS_USER: !Ref LoginEmail
+
+  CloudWatchRule:
+    Type: "AWS::Events::Rule"
+    Properties:
+      ScheduleExpression: "rate(15 minutes)"
+      State: ENABLED
+      Targets:
+        - Id: HandlerFn
+          Arn: !GetAtt HandlerFn.Arn
+
+  CloudWatchExecPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt HandlerFn.Arn
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CloudWatchRule.Arn
